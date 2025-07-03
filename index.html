@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DID & Credential Registry</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f3faff;
+      color: #333;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1, h2 {
+      color: #155a99;
+    }
+
+    .tab-buttons {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .tab-buttons button {
+      padding: 10px 20px;
+      margin: 5px;
+      background-color: #1f78d1;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .tab-buttons button:hover {
+      background-color: #155a99;
+    }
+
+    .role-section {
+      display: none;
+      border: 2px solid #bbb;
+      padding: 20px;
+      border-radius: 10px;
+      background-color: #fff;
+      max-width: 800px;
+      margin: auto;
+    }
+
+    .role-section.active {
+      display: block;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-content {
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+      width: 300px;
+    }
+
+    .modal-content input {
+      width: 100%;
+      margin: 10px 0;
+      padding: 8px;
+    }
+
+    .modal-content button {
+      width: 100%;
+    }
+
+    label {
+      font-weight: bold;
+      display: block;
+      margin-top: 10px;
+    }
+
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 8px;
+      margin-top: 5px;
+      box-sizing: border-box;
+    }
+
+    button {
+      padding: 10px 16px;
+      background: #1f78d1;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 5px;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background: #155a99;
+    }
+
+    .result {
+      font-weight: bold;
+      color: #444;
+      background: #eef;
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧠 Decentralized Identity (DID) & Credential Registry</h1>
+  <button onclick="connectWallet()">🔗 Connect MetaMask Wallet</button>
+  <p id="walletAddress" class="result">No wallet connected</p>
+
+  <div class="tab-buttons">
+    <button onclick="showLogin('user')">👤 User</button>
+    <button onclick="showLogin('issuer')">🏛️ Issuer</button>
+    <button onclick="showLogin('verifier')">🧾 Verifier</button>
+  </div>
+
+  <div class="modal" id="loginModal">
+    <div class="modal-content">
+      <h3>Enter Password for <span id="loginRole"></span></h3>
+      <input type="password" id="rolePassword" placeholder="Enter password" />
+      <button onclick="loginAsRole()">Login</button>
+    </div>
+  </div>
+
+  <div id="userSection" class="role-section">
+    <h2>👤 User / Identity Owner</h2>
+    <label>Enter your DID Document</label>
+    <input id="didInput" placeholder="e.g., did:example:123 or JSON" />
+    <button onclick="createDID()">Register DID</button>
+
+    <label>Lookup DID for Address</label>
+    <input id="getDidInput" placeholder="Enter Ethereum address" />
+    <button onclick="getDID()">Get DID Document</button>
+    <div id="didResult" class="result"></div>
+  </div>
+
+  <div id="issuerSection" class="role-section">
+    <h2>🏛️ Issuer</h2>
+    <label>Holder's Ethereum Address</label>
+    <input id="credHolder" placeholder="Enter holder address" />
+
+    <label>Credential Hash (keccak256)</label>
+    <input id="credHash" placeholder="Enter credential hash" />
+
+    <button onclick="issueCredential()">Issue Credential</button>
+    <div id="credIssued" class="result"></div>
+
+    <label>Credential ID to Revoke</label>
+    <input id="revokeInput" placeholder="Enter credential ID" />
+    <button onclick="revokeCredential()">Revoke Credential</button>
+    <div id="revokeResult" class="result"></div>
+  </div>
+
+  <div id="verifierSection" class="role-section">
+    <h2>🧾 Verifier</h2>
+    <label>Credential ID to Verify</label>
+    <input id="verifyInput" placeholder="Enter credential ID" />
+    <button onclick="verifyCredential()">Verify Credential</button>
+    <div id="verifyResult" class="result"></div>
+  </div>
+
+  <script>
+    const roles = {
+      user: {
+        password: "user123",
+        wallet: "0xc9F89D77943faeaC85d4562F4497813F27969740"
+      },
+      issuer: {
+        password: "issuer123",
+        wallet: "0x49cc22626DdAe72612994c5a02Fabf02eBD186cf"
+      },
+      verifier: {
+        password: "verifier123",
+        wallet: "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4"
+      }
+    };
+
+    let currentWallet = null;
+    let currentRole = null;
+
+    async function connectWallet() {
+      if (window.ethereum) {
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        const signer = provider.getSigner();
+        const address = await signer.getAddress();
+        currentWallet = address.toLowerCase();
+        document.getElementById("walletAddress").innerText = "Connected Wallet: " + address;
+        sessionStorage.setItem("wallet", currentWallet);
+        if (currentRole && roles[currentRole].wallet.toLowerCase() === currentWallet) {
+          switchTab(`${currentRole}Section`);
+        }
+      } else {
+        alert("MetaMask is not installed!");
+      }
+    }
+
+    function showLogin(role) {
+      document.getElementById("loginRole").innerText = role.charAt(0).toUpperCase() + role.slice(1);
+      document.getElementById("loginModal").style.display = "flex";
+      currentRole = role;
+    }
+
+    function loginAsRole() {
+      const input = document.getElementById("rolePassword").value;
+      const modal = document.getElementById("loginModal");
+      if (input === roles[currentRole].password) {
+        if (!currentWallet) {
+          alert("Please connect your wallet first.");
+          return;
+        }
+        if (roles[currentRole].wallet.toLowerCase() !== currentWallet) {
+          alert("Unauthorized wallet address for this role.");
+          return;
+        }
+        switchTab(`${currentRole}Section`);
+        modal.style.display = "none";
+        sessionStorage.setItem("role", currentRole);
+      } else {
+        alert("❌ Incorrect password.");
+      }
+    }
+
+    function switchTab(sectionId) {
+      document.querySelectorAll('.role-section').forEach(section => {
+        section.classList.remove('active');
+      });
+      document.getElementById(sectionId).classList.add('active');
+    }
+
+    // Auto-restore session
+    window.onload = () => {
+      const savedWallet = sessionStorage.getItem("wallet");
+      const savedRole = sessionStorage.getItem("role");
+      if (savedWallet && savedRole) {
+        currentWallet = savedWallet;
+        currentRole = savedRole;
+        switchTab(`${currentRole}Section`);
+        document.getElementById("walletAddress").innerText = "Restored Wallet: " + savedWallet;
+      }
+    }
+  </script>
+</body>
+</html>
