@@ -32,7 +32,7 @@ Clone or download this repository
 bash
 Copy
 Edit
-git clone https://github.com/yourusername/did-credential-registry.git
+git clone https://github.com/siddhilokare/corda-did.git
 cd did-credential-registry
 Deploy contracts using Remix IDE:
 
